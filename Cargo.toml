@@ -24,10 +24,11 @@ members = [
     "ulib/axlibc",
 
     "examples/helloworld",
+    "examples/loader",
     "examples/httpclient",
     "examples/httpserver",
     "examples/httpserver",
-    "examples/shell",
+    "examples/shell", "examples/loader",
 ]
 
 [workspace.package]
