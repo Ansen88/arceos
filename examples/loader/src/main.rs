@@ -3,91 +3,77 @@
 #![feature(asm_const)]
 
 #[cfg(feature = "axstd")]
-use axstd::println;
+use axstd::{println, process};
 
 const PLASH_START: usize = 0xffff_ffc0_2200_0000;
 
-#[repr(C)]
-struct SubHeader{
-    entry: u64,     // virtual address
-    data_len: u64,  // programer's length
-}
-
-#[repr(C)]
-struct Header{
-    magic: [u8;16], // anlj
-    class: [u8;8],  // anlj64
-    endian: u64,    // little/big
-    machine: u64,   // architecture
-    app_num: u64,   // programer's length
-    subheader: [SubHeader; 2],
-}
-
 #[cfg_attr(feature = "axstd", no_mangle)]
 fn main() {
-    let header_start = PLASH_START as *const u8;
-    let header_size = core::mem::size_of::<Header>();
-    let slice = unsafe {core::slice::from_raw_parts(header_start, header_size)};
-    let header_ptr = unsafe {
-        slice.as_ptr() as *const Header
-    };
-    let header = unsafe {
-        &*header_ptr
-    };
-
-    let app_num = header.app_num;
-    let app_start = PLASH_START + header_size;
-    println!("apps'num is {app_num}");
-    println!("header_size is {header_size}");
-
-    let app0_size = header.subheader[0].data_len as usize;
-    let app1_size = header.subheader[1].data_len as usize;
-
-    let app0_start_ptr = app_start as *const u8;
-    let app0_start = unsafe{
-        &*app0_start_ptr
-    };
-
-    let app1_start_ptr = (app_start + app0_size) as *const u8;
-    let app1_start = unsafe{
-        &*app1_start_ptr
-    };
+    let load_start = PLASH_START as *const u8;
+    let load_size = 32; // Dangerous!!! We need to get accurate size of apps.
 
     println!("Load payload ...");
 
-    let code0 = unsafe { core::slice::from_raw_parts(app0_start, app0_size) };
-    println!("app0 size is {}", app0_size);
-    println!("app0's content: {:?}: ", code0);
+    let load_code = unsafe { core::slice::from_raw_parts(load_start, load_size) };
+    println!("load code {:?}; address [{:?}]", load_code, load_code.as_ptr());
 
-    let code1 = unsafe { core::slice::from_raw_parts(app1_start, app1_size) };
-    println!("app1 size is {}", app1_size);
-    println!("app1's content: {:?}: ", code1);
+    // app running aspace
+    // SBI(0x80000000) -> App <- Kernel(0x80200000)
+    // va_pa_offset: 0xffff_ffc0_0000_0000
+    const RUN_START: usize = 0xffff_ffc0_8010_0000;
+
+    let run_code = unsafe {
+        core::slice::from_raw_parts_mut(RUN_START as *mut u8, load_size)
+    };
+    run_code.copy_from_slice(load_code);
+    println!("run code {:?}; address [{:?}]", run_code, run_code.as_ptr());
 
     println!("Load payload ok!");
 
-    const RUN_START: usize = 0xffff_ffc0_8010_0000;
-    
-    let run_code0 = unsafe {
-        core::slice::from_raw_parts_mut(RUN_START as *mut u8, app0_size)
-    };
-    run_code0.copy_from_slice(code0);
+    register_abi(SYS_HELLO, abi_hello as usize);
+    register_abi(SYS_PUTCHAR, abi_putchar as usize);
+    register_abi(SYS_TERMINATE, abi_terminate as usize);
 
-    println!("Execute app0 ...");
+    println!("Execute app ...");
+    // let arg0: u8 = b'A';
+
+    // execute app
     unsafe { core::arch::asm!("
+        li      t0, {abi_num}
+        slli    t0, t0, 3
+        la      t1, {abi_table}
+        add     t1, t1, t0
+        ld      t1, (t1)
+        jalr    t1
         li      t2, {run_start}
-        jalr    t2",
+        jalr    t2
+        j       .",
         run_start = const RUN_START,
+        abi_table = sym ABI_TABLE,
+        abi_num = const SYS_TERMINATE,
+        // in("a0") arg0,
     )}
+}
 
-    let run_code1 = unsafe {
-        core::slice::from_raw_parts_mut(RUN_START as *mut u8, app1_size)
-    };
-    run_code1.copy_from_slice(code1);
+const SYS_HELLO: usize = 1;
+const SYS_PUTCHAR: usize = 2;
+const SYS_TERMINATE: usize = 3;
 
-    println!("Execute app1 ...");
-    unsafe  { core::arch::asm!("
-        li      t2, {run_start}
-        jalr    t2",
-        run_start = const RUN_START,
-    )}
+static mut ABI_TABLE: [usize; 16] = [0;16];
+
+fn register_abi(num: usize, handle: usize) {
+    unsafe {ABI_TABLE[num] = handle;}
+}
+
+fn abi_hello() {
+    println!("[ABI:Hello] hello, Apps!");
+}
+
+fn abi_putchar(c: char) {
+    println!("[ABI: Print] {c}");
+}
+
+fn abi_terminate() {
+    println!("[ABI: Terminate] terminate");
+    process::exit(0);
 }
