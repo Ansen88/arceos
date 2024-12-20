@@ -10,12 +10,12 @@ const PLASH_START: usize = 0xffff_ffc0_2200_0000;
 #[cfg_attr(feature = "axstd", no_mangle)]
 fn main() {
     let load_start = PLASH_START as *const u8;
-    let load_size = 32; // Dangerous!!! We need to get accurate size of apps.
+    let load_size = 32000; // Dangerous!!! We need to get accurate size of apps.
 
     println!("Load payload ...");
 
     let load_code = unsafe { core::slice::from_raw_parts(load_start, load_size) };
-    println!("load code {:?}; address [{:?}]", load_code, load_code.as_ptr());
+    // println!("load code {:?}; address [{:?}]", load_code, load_code.as_ptr());
 
     // app running aspace
     // SBI(0x80000000) -> App <- Kernel(0x80200000)
@@ -26,7 +26,7 @@ fn main() {
         core::slice::from_raw_parts_mut(RUN_START as *mut u8, load_size)
     };
     run_code.copy_from_slice(load_code);
-    println!("run code {:?}; address [{:?}]", run_code, run_code.as_ptr());
+    // println!("run code {:?}; address [{:?}]", run_code, run_code.as_ptr());
 
     println!("Load payload ok!");
 
@@ -35,25 +35,19 @@ fn main() {
     register_abi(SYS_TERMINATE, abi_terminate as usize);
 
     println!("Execute app ...");
-    // let arg0: u8 = b'A';
 
     // execute app
     unsafe { core::arch::asm!("
-        li      t0, {abi_num}
-        slli    t0, t0, 3
-        la      t1, {abi_table}
-        add     t1, t1, t0
-        ld      t1, (t1)
-        jalr    t1
+        la      a7, {abi_table}
         li      t2, {run_start}
         jalr    t2
         j       .",
         run_start = const RUN_START,
         abi_table = sym ABI_TABLE,
-        abi_num = const SYS_TERMINATE,
-        // in("a0") arg0,
+        options(nomem, nostack, preserves_flags)
     )}
 }
+
 
 const SYS_HELLO: usize = 1;
 const SYS_PUTCHAR: usize = 2;
