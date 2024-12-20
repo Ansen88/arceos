@@ -20,13 +20,18 @@ fn main() {
     // app running aspace
     // SBI(0x80000000) -> App <- Kernel(0x80200000)
     // va_pa_offset: 0xffff_ffc0_0000_0000
-    const RUN_START: usize = 0xffff_ffc0_8010_0000;
+    const RUN_START: usize = 0xffff_ffc0_8010_0000; // 0x10130
 
     let run_code = unsafe {
         core::slice::from_raw_parts_mut(RUN_START as *mut u8, load_size)
     };
     run_code.copy_from_slice(load_code);
-    // println!("run code {:?}; address [{:?}]", run_code, run_code.as_ptr());
+    let abi_table = unsafe {
+        &ABI_TABLE
+    };
+    println!("run code {:?}; address [{:?}]", run_code, run_code.as_ptr());
+    // println!("address [{:?}]", run_code.as_ptr());
+    // println!("abi_table [{:?}]", abi_table.as_ptr());
 
     println!("Load payload ok!");
 
@@ -42,8 +47,9 @@ fn main() {
         li      t2, {run_start}
         jalr    t2
         j       .",
-        run_start = const RUN_START,
+        run_start = const (RUN_START + 4),
         abi_table = sym ABI_TABLE,
+
         options(nomem, nostack, preserves_flags)
     )}
 }
